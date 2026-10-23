@@ -1,115 +1,106 @@
-# Pontos pendentes — Entrega A2 (05/11)
+# Pontos pendentes: Entrega A2 (05/11)
 
-Checklist do que falta neste repositório para atender a **Avaliação A2 — Projeto Fase 2: Infraestrutura como Código (IaC) e Entrega Contínua (CD)**, conforme `specsEntregaA2`.
+Checklist do que faltava neste repositório para atender a **Avaliação A2 — Projeto Fase 2: Infraestrutura como Código (IaC) e Entrega Contínua (CD)**, conforme `specsEntregaA2`.
+
+> **Status em 23/10/2026:** todos os itens técnicos foram implementados e validados no GitHub Actions. Restam só os 2 itens manuais marcados com 👤 no final.
 
 ## Resumo
 
-| # | Entrega exigida | Situação atual |
-|---|---|---|
-| 1 | Dockerfile otimizado | ⚠️ Existe, mas não está otimizado |
-| 2 | Orquestração local (Docker Compose ou K8s) com dependências | ❌ Não existe |
-| 3 | Pipeline de CD (push para registry + deploy automático) | ❌ Não existe — pipeline atual é só CI |
-| 4 | Gestão segura de configurações e segredos | ❌ Nenhum secret/variável de ambiente em uso |
-| 5 | Versionamento semântico + rollback documentado | ❌ Sem tags, sem versão na imagem, sem rollback |
+| # | Entrega exigida | Situação | Onde |
+|---|---|---|---|
+| 1 | Dockerfile otimizado | ✅ Feito | `Dockerfile`, `Documentation/DOCKERFILE.md` |
+| 2 | Orquestração local (Docker Compose) com dependências | ✅ Feito | `docker-compose.yml`, `Documentation/DOCKER-COMPOSE.md` |
+| 3 | Pipeline de CD (push para registry + deploy automático) | ✅ Feito | `.github/workflows/ci-cd.yml`, `deploy.yml`, `Documentation/CI-CD.md` |
+| 4 | Gestão segura de configurações e segredos | ✅ Feito | GitHub Environments, `.env.example`, `Documentation/SEGREDOS.md` |
+| 5 | Versionamento semântico + rollback documentado | ✅ Feito | tags `v1.0.0`/`v1.0.1`/`v1.1.0`, `Documentation/VERSIONAMENTO-E-ROLLBACK.md` |
 
 ---
 
 ## 1. Dockerfile otimizado
 
-Arquivo atual: `Dockerfile` (multi-stage `sdk:8.0` → `aspnet:8.0`).
-
-- [ ] **Cache de camadas:** copiar primeiro só `MediaEscolar.sln`, `global.json` e os `.csproj`, rodar `dotnet restore` e só depois `COPY . .` + `dotnet publish --no-restore`. Hoje o `COPY . .` invalida o restore a cada mudança de código.
-- [ ] **Usuário não-root:** adicionar `USER $APP_UID` no estágio final (o usuário `app` já existe na imagem `aspnet:8.0`).
-- [ ] **Healthcheck:** criar endpoint `GET /health` na API e adicionar `HEALTHCHECK` no Dockerfile (ou no compose).
-- [ ] **Versão na imagem:** `ARG VERSION` + labels OCI (`org.opencontainers.image.version`, `org.opencontainers.image.source`, `org.opencontainers.image.revision`).
-- [ ] Publicar com `-p:UseAppHost=false` (imagem menor, só a DLL é necessária).
-- [ ] Atualizar `Documentation/DOCKERFILE.md` com as mudanças.
+- [x] **Cache de camadas:** `*.sln`, `global.json` e `*.csproj` copiados primeiro, depois `dotnet restore`, só então `COPY src/` + `dotnet publish --no-restore`.
+- [x] **Usuário não-root:** `USER $APP_UID` (uid 1654, usuário `app`).
+- [x] **Healthcheck:** endpoint `GET /health` (testa o banco) + `HEALTHCHECK` no Dockerfile.
+- [x] **Versão na imagem:** `ARG VERSION`/`REVISION` + labels OCI (`version`, `revision`, `source`).
+- [x] Publicar com `-p:UseAppHost=false`.
+- [x] Runtime `aspnet:8.0-alpine`: imagem final de ~51 MB comprimida.
+- [x] `Documentation/DOCKERFILE.md` atualizado.
 
 ## 2. Orquestração local com dependências
 
-Hoje a API guarda os alunos em uma `List<Aluno>` em memória (`src/MediaEscolar.Api/Program.cs`) — **não há dependência nenhuma para orquestrar**, e o spec pede integração com banco de dados/cache.
-
-- [ ] Adicionar banco de dados (sugestão: **PostgreSQL** com **EF Core** / `Npgsql.EntityFrameworkCore.PostgreSQL`).
-  - [ ] `DbContext` + entidade `Aluno` mapeada.
-  - [ ] Migrations (ou `EnsureCreated`/`Migrate` na inicialização).
-  - [ ] Substituir a `List<Aluno>` e o `proximoId++` (não thread-safe) pelo banco.
-  - [ ] Connection string lida de configuração/variável de ambiente (`ConnectionStrings__Default`), nunca fixa no código.
-- [ ] `/health` verificando também a conexão com o banco (`AddHealthChecks().AddNpgSql(...)` ou `AddDbContextCheck`).
-- [ ] Ajustar `tests/MediaEscolar.Tests/ApiIntegrationTests.cs` para não depender de um Postgres real (SQLite in-memory / EF InMemory via `WebApplicationFactory.ConfigureServices`, ou Testcontainers).
-- [ ] Criar **`docker-compose.yml`** na raiz:
-  - [ ] serviço `db` (`postgres:16-alpine`) com volume nomeado e `healthcheck` (`pg_isready`).
-  - [ ] serviço `api` (build local ou `image: ghcr.io/enzoblousa/boletim-escolar:${APP_VERSION}`), `depends_on: db: condition: service_healthy`, porta `8080:8080`.
-  - [ ] Todas as credenciais vindas de `${VARIAVEIS}` (ver item 4).
-- [ ] Documentar como subir: `docker compose up -d --build` (README + `Documentation/ComandosParaRodar.md`).
+- [x] Banco **PostgreSQL 16** com **EF Core 8** / Npgsql.
+  - [x] `AppDbContext` + entidade `Aluno` mapeada (`src/MediaEscolar.Api/Data/AppDbContext.cs`).
+  - [x] Criação do schema na inicialização (`EnsureCreated`). Migrations ficaram como próximo passo (ver lições em `VERSIONAMENTO-E-ROLLBACK.md`).
+  - [x] `List<Aluno>` em memória e `proximoId++` substituídos pelo banco.
+  - [x] Connection string via `ConnectionStrings__Default` (variável de ambiente).
+- [x] `/health` verificando a conexão com o banco (`AddDbContextCheck<AppDbContext>`).
+- [x] Testes de integração com EF Core InMemory (`tests/MediaEscolar.Tests/ApiFactory.cs`), mais testes novos de `/health` e `/version` (9 testes no total).
+- [x] **`docker-compose.yml`**:
+  - [x] `db` (`postgres:16-alpine`) com volume `db-data` e healthcheck `pg_isready`.
+  - [x] `api` (`${APP_IMAGE}:${APP_VERSION}` ou build local), `depends_on: condition: service_healthy`, porta `8080`.
+  - [x] Credenciais via `${VARIAVEIS}`, e o compose recusa subir sem `POSTGRES_PASSWORD`.
+- [x] Documentado no README, em `Documentation/ComandosParaRodar.md` e em `Documentation/DOCKER-COMPOSE.md`.
 
 ## 3. Pipeline de CD automatizado
 
-Arquivo atual: `.github/workflows/ci.yml` — só builda a imagem localmente com a tag `media-escolar` e nunca publica.
-
-- [ ] Reordenar: lint + testes primeiro; build/push da imagem **só se passarem** (job separado com `needs:`).
-- [ ] Publicar a imagem no **GHCR** (`ghcr.io/enzoblousa/boletim-escolar`):
-  - [ ] `permissions: packages: write`
-  - [ ] `docker/login-action` (usando `GITHUB_TOKEN`)
-  - [ ] `docker/metadata-action` (gera tags semver + `sha`)
-  - [ ] `docker/build-push-action`
-- [ ] Job **`deploy-homologacao`** (GitHub Environment `homologacao`): baixa a imagem publicada do registry, sobe com `docker compose`, roda smoke test (`/health` + fluxo cadastro → notas → consulta).
-- [ ] Job **`deploy-producao`** (GitHub Environment `producao`, com *required reviewers* para aprovação manual), mesmo processo.
-- [ ] Decidir o ambiente "simulado":
-  - Opção A (gratuita, sem conta externa): deploy no próprio runner do Actions via compose + smoke test.
-  - Opção B: serviço real (Render/Railway) acionado via deploy hook guardado em secret.
-- [ ] Manter os passos atuais de evidência (screenshot Playwright, relatórios, artifact `evidencias-pipeline`).
-- [ ] Renomear o workflow (ex.: `CI-CD`) e atualizar `Documentation/CI.md`.
+- [x] Lint + testes primeiro; publish só com CI verde (`needs:`).
+- [x] Publicação no **GHCR** (`ghcr.io/enzoblousa/boletim-escolar`):
+  - [x] `permissions: packages: write` só no job `publish`
+  - [x] `docker/login-action` com `GITHUB_TOKEN`
+  - [x] `docker/metadata-action` (tags `X.Y.Z`, `X.Y`, `latest`, `sha-…`)
+  - [x] `docker/build-push-action` com cache `gha`
+- [x] **`deploy-homologacao`** (Environment `homologacao`): imagem do GHCR + compose + smoke test + rollback automático.
+- [x] **`deploy-producao`** (Environment `producao`, com *required reviewer*): mesmo processo.
+- [x] Ambiente "simulado": **opção A**, no próprio runner do Actions, partindo da última release estável.
+- [x] Evidências mantidas (screenshot Playwright, relatórios, artifact `evidencias-pipeline`), e o e2e do CI agora roda com PostgreSQL.
+- [x] Workflow renomeado para `CI-CD`; `Documentation/CI.md` virou `Documentation/CI-CD.md`.
+- [x] Job `release` cria a GitHub Release depois de produção.
+- [x] Actions atualizadas para versões em Node 24.
 
 ## 4. Gestão segura de configurações e segredos
 
-- [ ] Criar **GitHub Secrets** (por Environment quando fizer sentido): `POSTGRES_PASSWORD`, `POSTGRES_USER`, `POSTGRES_DB` (e o deploy hook, se usar a opção B).
-- [ ] Usar **GitHub Variables** para o que não é sensível (ex.: `APP_PORT`, `ASPNETCORE_ENVIRONMENT`).
-- [ ] Criar `.env.example` versionado (só nomes das variáveis, sem valores reais).
-- [ ] Adicionar `.env` ao `.gitignore` e ao `.dockerignore`.
-- [ ] No workflow, gerar o `.env` do deploy a partir dos secrets (`${{ secrets.X }}`) — nunca em texto puro no YAML.
-- [ ] Garantir que `appsettings*.json` não contenham senha/connection string real.
-- [ ] Documentar quais secrets existem e onde são usados (sem os valores) — print da tela de Secrets como evidência.
+- [x] **Secrets** por Environment: `POSTGRES_PASSWORD` (senhas aleatórias, diferentes entre homologação e produção).
+- [x] **Variables** por Environment: `POSTGRES_DB`, `POSTGRES_USER`, `ASPNETCORE_ENVIRONMENT`.
+- [x] `.env.example` versionado, sem valores sensíveis.
+- [x] `.env` no `.gitignore` e no `.dockerignore`.
+- [x] Workflow injeta os secrets como variáveis de ambiente do job (`secrets: inherit` no reusable workflow) e valida a presença deles.
+- [x] `appsettings*.json` sem senha nem connection string.
+- [x] Senha do banco de CI gerada na hora (`openssl rand`).
+- [x] Documentado em `Documentation/SEGREDOS.md`.
+- [ ] 👤 Print da tela *Settings → Environments* (secrets listados sem valor), se o professor pedir evidência visual.
 
 ## 5. Versionamento semântico e rollback
 
-- [ ] Adotar **SemVer** com tags git `vMAJOR.MINOR.PATCH` (ex.: `v1.0.0`); o push de uma tag `v*` dispara build/push/deploy.
-- [ ] Imagem publicada com tags `1.0.0`, `1.0`, `sha-<commit>` (via `docker/metadata-action`).
-- [ ] (Opcional) `<Version>` no `MediaEscolar.Api.csproj` e versão exposta no `/health` ou em `GET /version`, para provar qual versão está no ar.
-- [ ] Criar **GitHub Releases** para cada tag.
-- [ ] Rollback:
-  - [ ] Automático: se o smoke test pós-deploy falhar, redeploy da última tag estável.
-  - [ ] Manual: `workflow_dispatch` com input `version` para reimplantar qualquer tag publicada.
-- [ ] **Simulação documentada** em `Documentation/ROLLBACK.md`:
-  1. Publicar `v1.0.0` (funcionando).
-  2. Publicar `v1.1.0` com falha proposital (ex.: `/health` retornando 500).
-  3. Mostrar o deploy falhando no smoke test.
-  4. Mostrar o rollback para `v1.0.0` e a API de volta ao ar.
-  5. Anexar links das runs e prints.
+- [x] **SemVer** com tags `vX.Y.Z`; o push da tag dispara build/push/deploy.
+- [x] Imagem com tags `X.Y.Z`, `X.Y`, `latest`, `sha-<commit>`.
+- [x] `<Version>` no `.csproj` (sobrescrita pela tag) e `GET /version`, conferido pelo smoke test.
+- [x] **GitHub Releases** criadas automaticamente (`v1.0.1`).
+- [x] Rollback:
+  - [x] Automático: smoke test falhou, volta para a versão que estava no ar.
+  - [x] Manual: `workflow_dispatch` do workflow `Deploy` com `ambiente` + `versao`.
+- [x] **Simulação documentada** em `Documentation/VERSIONAMENTO-E-ROLLBACK.md`, com links das runs:
+  1. `v1.0.1` publicada e implantada em homologação e produção.
+  2. `v1.1.0` com falha proposital (coluna `Email` sem migration).
+  3. Deploy falhou no smoke test de homologação.
+  4. Rollback automático para `1.0.1`, com dados preservados e produção intacta.
+  5. Rollback manual de produção `1.0.1 → 1.0.0`.
 
 ---
 
-## Inconsistências já existentes a corrigir
+## Inconsistências corrigidas
 
-- [ ] Badge do CI, link da run de evidência (`README.md`) e link de Actions (`Documentation/RESULTADOS-TESTES.md`) apontam para `enzoblousa/RED_Ensino_Domiciliar`; o repositório é `enzoblousa/boletim-escolar`.
-- [ ] `README.md` chama a esteira de "CI/CD", mas hoje não existe CD.
-- [ ] `README.md` linka `RESULTADOS-TESTES.md` na raiz; o arquivo está em `Documentation/RESULTADOS-TESTES.md`.
-- [ ] Conclusão do `README.md` cita "regressões (como a simulada acima)", mas essa seção foi removida.
-- [ ] `Documentation/RESULTADOS-TESTES.md` diz que `coveragereport/` é commitado como evidência permanente, mas a pasta não existe no repositório (commitar ou remover a afirmação).
-- [ ] `Documentation/ComandosParaRodar.md`:
-  - [ ] URLs `https//:LocalHost:8080` → `http://localhost:8080` (a imagem não serve HTTPS).
-  - [ ] Body do `POST /alunos` envia `id`, `nota1`, `nota2`; a API só aceita `{ "nome": "..." }`.
-  - [ ] Exemplo de resposta do `GET /alunos/1` mostra um array com notas `null`; a API retorna um objeto com `media` e `situacao`.
-  - [ ] `dotnet test -logger` → `dotnet test --logger`.
-- [ ] `.dockerignore` ignora `docs/`, mas a pasta se chama `Documentation/`.
-- [ ] `Documentation/CI.md` afirma que o `ubuntu-latest` não vem com .NET; ele vem — o `setup-dotnet` serve para fixar a versão.
-- [ ] `specsEntregaA2` ainda não está commitado.
-- [ ] Atualizar `Documentation/TECNOLOGIAS.md` com as novas tecnologias (PostgreSQL, EF Core, Docker Compose, GHCR, GitHub Environments/Secrets, actions do Docker).
+- [x] Badge e links de Actions apontavam para `RED_Ensino_Domiciliar` e agora apontam para `boletim-escolar`.
+- [x] O README chamava a esteira de "CI/CD" sem ter CD; agora o CD existe e está documentado.
+- [x] Links do README para `Documentation/...` corrigidos.
+- [x] Conclusão do README reescrita (sem a referência à "simulada acima").
+- [x] `RESULTADOS-TESTES.md`: `coveragereport/` descrito como gerado localmente, não commitado.
+- [x] `ComandosParaRodar.md`: URLs `http://localhost:8080`, body do `POST /alunos` só com `nome`, resposta do `GET /alunos/1` como objeto com `media`/`situacao`, `--logger`.
+- [x] `.dockerignore`: `docs/` corrigido para `Documentation/`, e `.env`, `scripts/` e compose ignorados.
+- [x] Frase incorreta do `CI.md` sobre o .NET no `ubuntu-latest` removida na reescrita (`CI-CD.md`).
+- [x] `specsEntregaA2` commitado.
+- [x] `TECNOLOGIAS.md` e `EXTENSOES.md` atualizados (PostgreSQL, EF Core, Compose, GHCR, Environments/Secrets, actions do Docker, scripts).
 
-## Ordem sugerida de execução
+## Pendências manuais (👤)
 
-1. `/health` + PostgreSQL/EF Core + connection string via ambiente + testes ajustados.
-2. Otimização do Dockerfile.
-3. `docker-compose.yml` + `.env.example` + `.gitignore`.
-4. Workflow de CD: push GHCR com tags semver → deploy homologação → deploy produção, usando secrets.
-5. Tag `v1.0.0`, depois `v1.1.0` quebrada, e documentação do rollback.
-6. Correção das inconsistências e atualização de README e `Documentation/`.
+- [ ] 👤 **Tornar o pacote do GHCR público** (opcional, para o professor ver as imagens sem login): *github.com/enzoblousa → Packages → boletim-escolar → Package settings → Change visibility → Public*. O token do `gh` usado nesta sessão não tem o escopo `read/write:packages`, então isso não pôde ser feito pela CLI.
+- [ ] 👤 Print da tela de Environments/Secrets (item 4), se necessário.

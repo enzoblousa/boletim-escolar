@@ -46,7 +46,6 @@ Roda só em tags `v*`, depois do CI verde. Permissão `packages: write`.
 - `docker/metadata-action`: gera as tags da imagem a partir da tag git:
   - `ghcr.io/enzoblousa/boletim-escolar:1.2.3` (versão exata, imutável)
   - `ghcr.io/enzoblousa/boletim-escolar:1.2` (última patch da minor)
-  - `ghcr.io/enzoblousa/boletim-escolar:latest`
   - `ghcr.io/enzoblousa/boletim-escolar:sha-<commit>` (rastreabilidade)
 - `docker/build-push-action`: build + push, com cache de camadas do GitHub Actions (`type=gha`) e os build-args `VERSION`/`REVISION`, que viram labels OCI e a resposta de `GET /version`.
 
@@ -75,7 +74,10 @@ Passos do `deploy.yml`:
 
 ## Job `release`
 
-Só roda se **homologação e produção** passarem. Cria a GitHub Release da tag com notas geradas automaticamente. A última Release é a referência de "versão estável" usada no passo 3 do deploy e nos rollbacks.
+Só roda se **homologação e produção** passarem. Faz duas coisas:
+
+1. **Promove a imagem para `latest`** (`docker buildx imagetools create`, um retag do manifest sem rebuild). O `latest` sempre aponta para a última versão que passou em produção, nunca para uma versão recém-publicada que ainda pode falhar. Antes dessa correção, o `metadata-action` movia o `latest` já no `publish`, e a `v1.1.0` defeituosa chegou a virar `latest` mesmo barrada em homologação.
+2. Cria a GitHub Release da tag com notas geradas automaticamente. A última Release é a referência de "versão estável" usada no passo 3 do deploy e nos rollbacks.
 
 ## Rollback manual
 
