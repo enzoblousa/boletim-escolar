@@ -2,6 +2,12 @@
 **/obj/
 .git
 .github
-docs/
+Documentation/
+scripts/
 *.md
+*.MD
 TestResults/
+.env
+.env.*
+docker-compose*.yml
+specsEntregaA2

@@ -1,0 +1,36 @@
+# Orquestração local: API + PostgreSQL
+# Uso local:   cp .env.example .env  (preencha a senha)  &&  docker compose up -d --build
+# Uso no deploy (pipeline): a imagem já publicada no GHCR é baixada com APP_VERSION=<versão> (ver scripts/deploy.sh)
+# Nenhuma credencial fica neste arquivo: todas vêm do .env (local, fora do git) ou dos Secrets do GitHub (pipeline)
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-media_escolar}
+      POSTGRES_USER: ${POSTGRES_USER:-media_escolar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: ${APP_IMAGE:-ghcr.io/enzoblousa/boletim-escolar}:${APP_VERSION:-latest}
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ConnectionStrings__Default: Host=db;Port=5432;Database=${POSTGRES_DB:-media_escolar};Username=${POSTGRES_USER:-media_escolar};Password=${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+
+volumes:
+  db-data:
