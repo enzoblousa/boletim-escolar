@@ -1,37 +1,72 @@
-# Dockerfile — explicação linha a linha
+# Dockerfile: explicação e otimizações
 
-O `Dockerfile` da raiz builda a API (`MediaEscolar.Api`) numa imagem Docker usando **multi-stage build**: um estágio só para compilar (com o SDK completo do .NET, mais pesado) e outro só para rodar (com o runtime, bem mais leve). A imagem final não carrega nada do SDK/ferramentas de build — só o necessário para executar.
+O `Dockerfile` da raiz builda a API (`MediaEscolar.Api`) com **multi-stage build**. Um estágio só compila, com o SDK completo do .NET; o outro só roda, com o runtime ASP.NET em **Alpine**. A imagem final não carrega nada do SDK, do código-fonte nem dos testes.
 
 ```dockerfile
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
-COPY . .
-RUN dotnet publish src/MediaEscolar.Api/MediaEscolar.Api.csproj -c Release -o /app
+COPY MediaEscolar.sln global.json ./
+COPY src/MediaEscolar.Api/MediaEscolar.Api.csproj src/MediaEscolar.Api/
+COPY tests/MediaEscolar.Tests/MediaEscolar.Tests.csproj tests/MediaEscolar.Tests/
+RUN dotnet restore src/MediaEscolar.Api/MediaEscolar.Api.csproj
+COPY src/ src/
+ARG VERSION
+RUN dotnet publish src/MediaEscolar.Api/MediaEscolar.Api.csproj -c Release -o /app --no-restore \
+    -p:UseAppHost=false ${VERSION:+-p:Version=$VERSION}
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS final
+ARG VERSION=dev
+ARG REVISION=local
+LABEL org.opencontainers.image.title="media-escolar-api" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}" \
+      org.opencontainers.image.source="https://github.com/enzoblousa/boletim-escolar"
 WORKDIR /app
 COPY --from=build /app .
 ENV ASPNETCORE_URLS=http://+:8080
 EXPOSE 8080
+USER $APP_UID
+HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
+    CMD wget -qO- http://localhost:8080/health || exit 1
 ENTRYPOINT ["dotnet", "MediaEscolar.Api.dll"]
 ```
 
-## Estágio 1 — `build`
+## Otimizações aplicadas
 
-- **`FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build`** — parte da imagem oficial do **SDK** do .NET 8 (inclui compilador, NuGet, `dotnet publish`, etc.). É a imagem mais pesada (centenas de MB), só existe para compilar — não vai para o container final. `AS build` dá um nome a esse estágio, para referenciar depois.
-- **`WORKDIR /src`** — define `/src` como diretório de trabalho dentro do container; todos os comandos seguintes rodam a partir dali.
-- **`COPY . .`** — copia todo o conteúdo do repositório (contexto do build, geralmente a raiz do projeto) para `/src` dentro do container. Isso inclui a solução, os projetos `src/` e `tests/`, etc.
-- **`RUN dotnet publish src/MediaEscolar.Api/MediaEscolar.Api.csproj -c Release -o /app`** — compila e publica especificamente o projeto da API (não a solução inteira, não os testes) em modo `Release` (otimizado, sem símbolos de debug), gravando o resultado (DLLs, `.deps.json`, `appsettings.json`, etc.) em `/app`.
+| Otimização | O que faz | Ganho |
+|---|---|---|
+| **Cache de restore** | Copia primeiro só `*.sln`, `global.json` e `*.csproj`, roda `dotnet restore` e só depois copia `src/`. | Mudanças no código não invalidam a camada de restore: os pacotes NuGet não são baixados de novo a cada build. |
+| **`--no-restore`** no publish | Reaproveita o restore da camada anterior. | Build mais rápido. |
+| **Runtime Alpine** (`aspnet:8.0-alpine`) | Base mínima. | Imagem final de **~51 MB comprimida** (~168 MB em disco). Só a base Debian `aspnet:8.0` já tem ~90 MB comprimida (~321 MB em disco), contra ~48 MB (~158 MB) da Alpine. Menos pacotes significa menos superfície de ataque. |
+| **`UseAppHost=false`** | Não gera o executável nativo, só a DLL (o `ENTRYPOINT` usa `dotnet`). | Menos arquivos na imagem. |
+| **Usuário não-root** (`USER $APP_UID`) | Roda como o usuário `app` (uid 1654), que já vem na imagem oficial. | Mesmo que a aplicação seja comprometida, o processo não tem privilégio de root no container. |
+| **`HEALTHCHECK`** | O Docker consulta `/health` (que testa a conexão com o PostgreSQL) a cada 10s. | O `docker compose ps` mostra `healthy`/`unhealthy`, e o deploy espera a aplicação estar saudável. |
+| **Versão e labels OCI** (`ARG VERSION` / `REVISION`) | A versão da tag git vira a `<Version>` do assembly (exposta em `GET /version`) e as labels da imagem. | Rastreabilidade: dá para saber qual versão e qual commit estão rodando. O label `source` liga a imagem do GHCR ao repositório. |
+| **`.dockerignore`** | Exclui `bin/`, `obj/`, `.git`, `.github`, documentação, scripts, `TestResults/` e **`.env`**. | Contexto de build menor, e segredos locais nunca entram na imagem. |
 
-## Estágio 2 — imagem final (runtime)
+## Estágio 1: `build`
 
-- **`FROM mcr.microsoft.com/dotnet/aspnet:8.0`** — começa um estágio novo, do zero, a partir da imagem **ASP.NET Runtime** (não o SDK) — tem só o necessário para executar uma aplicação ASP.NET Core já compilada, é bem menor que a imagem de build. Como não tem `AS nome`, esse é o estágio "final": é o que efetivamente vira a imagem publicada.
-- **`WORKDIR /app`** — define `/app` como diretório de trabalho neste novo estágio (container limpo, não tem relação com o `/app` do estágio anterior além do nome).
-- **`COPY --from=build /app .`** — copia o conteúdo de `/app` **do estágio `build`** (onde o `dotnet publish` gravou os arquivos) para o `/app` deste estágio atual. É a ponte entre os dois estágios: só o resultado já compilado atravessa, nunca o código-fonte nem o SDK.
-- **`ENV ASPNETCORE_URLS=http://+:8080`** — variável de ambiente que o ASP.NET Core lê para saber em qual endereço/porta escutar dentro do container. `+` significa "qualquer host", então a API escuta em todas as interfaces na porta `8080`.
-- **`EXPOSE 8080`** — só documenta/declara que o container usa a porta `8080` (não publica a porta no host automaticamente — isso é feito no `docker run -p` ou no `docker-compose`, como aparece no step de screenshot do `.github/workflows/ci.yml`, que usa `-p 8080:8080`).
-- **`ENTRYPOINT ["dotnet", "MediaEscolar.Api.dll"]`** — comando executado quando o container inicia: roda a DLL publicada com o runtime `dotnet`. É isso que efetivamente liga a API.
+- **`FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build`**: imagem do SDK, com compilador, NuGet e `dotnet publish`. É pesada e só existe para compilar.
+- **`COPY` dos arquivos de projeto + `RUN dotnet restore`**: camada de dependências, que fica em cache enquanto os `.csproj` não mudarem. O `.csproj` de testes entra só porque a `.sln` o referencia; o código dos testes não é copiado.
+- **`COPY src/ src/`**: código-fonte da API, a camada que muda a cada commit.
+- **`ARG VERSION` + `dotnet publish`**: compila em `Release`. Se `VERSION` vier do pipeline (`1.2.3`), sobrescreve a `<Version>` do csproj. Sem ela, vale a versão do csproj.
 
-## Por que multi-stage?
+## Estágio 2: `final` (runtime)
 
-Sem o multi-stage, a imagem final teria o SDK inteiro (compilador, ferramentas de build) ocupando espaço e superfície de ataque sem necessidade em produção — só o estágio de **build** precisa disso. Com dois estágios, a imagem publicada (`aspnet:8.0` + DLLs) fica bem menor e mais segura, e o código-fonte/projetos de teste nem chegam a existir na imagem final.
+- **`FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine`**: só o runtime ASP.NET Core.
+- **`LABEL`**: metadados OCI (versão, commit, repositório de origem).
+- **`COPY --from=build /app .`**: só o resultado compilado atravessa de um estágio para o outro.
+- **`ENV ASPNETCORE_URLS=http://+:8080`** e **`EXPOSE 8080`**: a API escuta na porta 8080. A publicação da porta no host é feita no `docker run -p` ou no `docker-compose.yml`.
+- **`USER $APP_UID`**: processo sem privilégios.
+- **`HEALTHCHECK`**: `wget` (do busybox do Alpine) em `/health`.
+- **`ENTRYPOINT ["dotnet", "MediaEscolar.Api.dll"]`**: inicia a API.
+
+## Comandos
+
+```bash
+docker build -t media-escolar .                                   # versão do csproj
+docker build --build-arg VERSION=1.2.3 -t media-escolar:1.2.3 .   # versão explícita (o que o pipeline faz)
+docker image inspect media-escolar:1.2.3 --format '{{json .Config.Labels}}'
+```
+
+> A API depende de PostgreSQL. Para rodar, use o `docker compose` ([`DOCKER-COMPOSE.md`](DOCKER-COMPOSE.md)). Um `docker run` sozinho, sem banco, deixa o container `unhealthy`.
