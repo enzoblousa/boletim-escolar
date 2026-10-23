@@ -1,18 +1,17 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 
 namespace MediaEscolar.Tests;
 
 // Teste de integração da API: sobe a aplicação em memória (WebApplicationFactory) e exercita os endpoints reais via HTTP
-public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
+public class ApiIntegrationTests : IClassFixture<ApiFactory>
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HttpClient _client;
 
-    public ApiIntegrationTests(WebApplicationFactory<Program> factory)
+    public ApiIntegrationTests(ApiFactory factory)
     {
         _client = factory.CreateClient();
     }
@@ -43,6 +42,25 @@ public class ApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
         Assert.Equal("Aprovado", alunoConsultado.Situacao);
     }
 
+    // Teste de API: o health check (usado pelo Docker, compose e smoke test do deploy) deve responder Healthy
+    [Fact]
+    public async Task Health_DeveRetornarHealthy()
+    {
+        var response = await _client.GetAsync("/health");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("Healthy", await response.Content.ReadAsStringAsync());
+    }
+
+    // Teste de API: /version deve expor a versão semântica da aplicação (usada para confirmar qual release está no ar)
+    [Fact]
+    public async Task Version_DeveRetornarVersaoSemantica()
+    {
+        var versao = await _client.GetFromJsonAsync<VersaoDto>("/version", JsonOptions);
+        Assert.NotNull(versao);
+        Assert.Matches(@"^\d+\.\d+\.\d+", versao!.Versao);
+    }
+
+    private record VersaoDto(string Versao);
     private record AlunoCriadoDto(int Id, string Nome, double? Nota1, double? Nota2);
     private record AlunoConsultadoDto(int Id, string Nome, double? Nota1, double? Nota2, double? Media, string? Situacao);
 }

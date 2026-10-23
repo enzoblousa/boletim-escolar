@@ -1,0 +1,161 @@
+name: CI-CD
+
+# CI: todo push/PR para main e toda tag de versão
+# CD: só tags semver (v1.2.3) publicam a imagem no GHCR e fazem deploy em homologação -> produção
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ main ]
+
+# permissões mínimas por padrão; cada job pede só o que precisa
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+    #checkout do código
+      - name: Checkout
+        uses: actions/checkout@v4
+    #Setup de todas dependencias do dotnet, nuget packages, runtimes, compiladores, versões etc.
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+    #dotnet restore da solution raiz para restaurar as dependencias
+      - name: Restaurar dependencias
+        run: dotnet restore MediaEscolar.sln
+    #dotnet format apenas no style, e analyzers, o format padrão vinha com uma categoria a mais(whitespace, retirado pq tudo que eu mechia quebrava a pipeline)
+      - name: Analise estatica (dotnet format)
+        run: |
+          dotnet format style MediaEscolar.sln --verify-no-changes --report ./TestResults/format-style
+          dotnet format analyzers MediaEscolar.sln --verify-no-changes --report ./TestResults/format-analyzers
+    #realiza todos os testes unitários, integração e api e crie um registrador, nele coleta a cobertura de testes e expõe métricas e resultados em uma pasta /TestResults
+      - name: Executar testes com cobertura
+        run: dotnet test MediaEscolar.sln --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage" --results-directory ./TestResults
+
+    #builda a imagem que está no dockerfile, com a versão da tag quando for uma release (v1.2.3 -> 1.2.3)
+      - name: Build da imagem Docker
+        run: |
+          VERSION=""
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then VERSION="${GITHUB_REF_NAME#v}"; fi
+          docker build --build-arg VERSION="$VERSION" --build-arg REVISION="$GITHUB_SHA" -t media-escolar:ci .
+
+    #sobe a imagem buildada + PostgreSQL com o docker compose, roda o smoke test (health, versão, fluxo completo) e tira o screenshot do resultado
+    #a senha do banco de CI é gerada na hora (banco descartável), nenhuma senha fica no código
+      - name: Teste end-to-end com docker compose + screenshot
+        env:
+          APP_IMAGE: media-escolar
+          APP_VERSION: ci
+        run: |
+          POSTGRES_PASSWORD="$(openssl rand -hex 16)"
+          export POSTGRES_PASSWORD
+          docker compose up -d --no-build
+          if ! ./scripts/smoke-test.sh http://localhost:8080; then
+            docker compose logs api
+            exit 1
+          fi
+
+          npx --yes playwright@1.48.0 install --with-deps chromium
+          npx --yes playwright@1.48.0 screenshot "http://localhost:8080/alunos/1" ./TestResults/screenshot-execucao.png
+
+      - name: Encerrar containers da aplicacao
+        if: always()
+        run: POSTGRES_PASSWORD=x docker compose down -v || true
+
+      - name: Publicar evidencias (relatorio do linter, resultados de teste, cobertura e screenshot)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencias-pipeline
+          path: ./TestResults
+
+  # Publica a imagem no GitHub Container Registry com tags semver: 1.2.3, 1.2, latest e sha-<commit>
+  publish:
+    needs: build-and-test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      #login no GHCR com o token efêmero que o próprio GitHub Actions gera a cada run (nenhuma credencial salva no repositório)
+      - name: Login no GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Gerar tags e labels da imagem
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build e push da imagem
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            REVISION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-homologacao:
+    needs: publish
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      ambiente: homologacao
+      versao: ${{ needs.publish.outputs.version }}
+
+  # o Environment "producao" exige aprovação manual (required reviewers) antes de rodar
+  deploy-producao:
+    needs: [ publish, deploy-homologacao ]
+    permissions:
+      contents: read
+      packages: read
+    uses: ./.github/workflows/deploy.yml
+    with:
+      ambiente: producao
+      versao: ${{ needs.publish.outputs.version }}
+
+  # só vira Release (versão estável) o que passou por homologação e produção; o rollback usa a última Release como versão segura
+  release:
+    needs: [ publish, deploy-producao ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Criar GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Imagem: \`${IMAGE_NAME}:${{ needs.publish.outputs.version }}\` — implantada em homologação e produção."

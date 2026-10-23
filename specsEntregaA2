@@ -1,0 +1,16 @@
+Avaliação (A2) 05/11 – Projeto Fase 2: Infraestrutura como Código (IaC) e Entrega
+Contínua (CD)
+Entregas Esperadas:
+• Dockerfile Validador: Arquivo Dockerfile otimizado permitindo a geração de imagem da
+aplicação.(colocar na próxima entrega)
+ceub.br | SEPN 707/907, campus Asa Norte, CEP: 70.790-075, Brasília - DF • 3966-1201
+• Orquestração Local / Manifestos (Docker Compose ou K8s): Arquivo dockercompose.yml ou manifestos YAML do Kubernetes configurados para subir a aplicação
+integrada com suas dependências (ex: banco de dados, cache).
+• Pipeline de CD Automatizado: Extensão do pipeline para realizar a publicação da imagem
+em um Container Registry (Docker Hub, GHCR) e realizar o deploy automático em um
+ambiente de homologação/produção simulado.
+• Gestão Segura de Configurações e Segredos: Uso de Secrets Management da ferramenta
+de CI/CD para gerenciamento de credenciais e variáveis de ambiente (sem senhas salvas
+no código-fonte).
+• Evidência de Versionamento e Rollback: Configuração de versionamento semântico nas
+imagens/releases e simulação documentada de um fluxo de rollback em caso de falha.

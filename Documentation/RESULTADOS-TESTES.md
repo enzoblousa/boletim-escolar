@@ -7,7 +7,7 @@ Este projeto produz resultados de teste em três lugares diferentes, cada um com
 | Pasta / artifact | Onde fica | Comitado no git? | Gerado por |
 |---|---|---|---|
 | `TestResults/` | Local (sua máquina) e dentro do job do CI | Não (`.gitignore`) | `dotnet test` |
-| `coveragereport/` | Raiz do repositório | Sim | `reportgenerator` (manual) |
+| `coveragereport/` | Raiz do repositório (local) | Não (gerado sob demanda) | `reportgenerator` (manual) |
 | Artifact `evidencias-pipeline` | GitHub Actions (por execução) | Não (artifact, não arquivo) | Pipeline CI/CD |
 
 ## `TestResults/`
@@ -34,9 +34,11 @@ dotnet test MediaEscolar.sln --logger "trx;LogFileName=test-results.trx" --colle
 
 ## `coveragereport/`
 
-Relatório de cobertura em HTML, navegável, gerado a partir do `coverage.cobertura.xml` acima. Diferente de `TestResults/`, **esta pasta é comitada no repositório** para servir como evidência permanente de cobertura.
+Relatório de cobertura em HTML, navegável, gerado localmente a partir do `coverage.cobertura.xml` acima. Não é commitado: a evidência oficial de cobertura é o `coverage.cobertura.xml` publicado em cada execução no artifact `evidencias-pipeline` (ver abaixo), e o HTML pode ser regerado a qualquer momento com o comando abaixo.
 
 **Tecnologia:** [ReportGenerator](https://github.com/danielpalme/ReportGenerator) (ferramenta `dotnet-reportgenerator-globaltool`).
+
+> Os testes de integração (`ApiIntegrationTests.cs`) não precisam de PostgreSQL: o `ApiFactory.cs` troca o banco por EF Core InMemory. O teste contra o PostgreSQL real acontece no smoke test do pipeline (CI e deploy).
 
 **Como gerar/atualizar (depois de já ter rodado `dotnet test` com `--collect:"XPlat Code Coverage"`):**
 ```bash
@@ -48,16 +50,16 @@ reportgenerator -reports:"TestResults/**/coverage.cobertura.xml" -targetdir:"cov
 
 ## Artifact `evidencias-pipeline` (GitHub Actions)
 
-A cada execução da pipeline (`.github/workflows/ci.yml`), o passo final publica um artifact chamado `evidencias-pipeline` com o conteúdo da pasta `TestResults/` daquela execução específica — ou seja, é a versão "oficial" e mais completa dos resultados, gerada sem intervenção manual.
+A cada execução da pipeline (`.github/workflows/ci-cd.yml`, job `build-and-test`), o passo final publica um artifact chamado `evidencias-pipeline` com o conteúdo da pasta `TestResults/` daquela execução específica — ou seja, é a versão "oficial" e mais completa dos resultados, gerada sem intervenção manual.
 
 **Conteúdo do artifact:**
 - `format-style/format-report.json` e `format-analyzers/format-report.json` — relatórios da análise estática (`dotnet format style` e `dotnet format analyzers`, ambos com `--report`). A categoria `whitespace` foi removida do gate por ser excessivamente rígida sem um `.editorconfig` no repositório.
 - `test-results.trx` — relatório de testes daquela execução.
 - `coverage.cobertura.xml` — cobertura daquela execução.
-- `screenshot-execucao.png` — print automático (via Playwright headless) do JSON retornado pela API real, depois de exercitar o fluxo cadastro → notas → consulta contra a imagem Docker buildada na própria pipeline.
+- `screenshot-execucao.png` — print automático (via Playwright headless) do JSON retornado pela API real, depois do smoke test (`scripts/smoke-test.sh`) exercitar o fluxo cadastro → notas → consulta contra a imagem Docker buildada na própria pipeline, rodando com PostgreSQL via `docker compose`.
 
 **Como acessar:**
-- Pela interface: abra a run em https://github.com/enzoblousa/RED_Ensino_Domiciliar/actions, role até "Artifacts" no final da página e baixe `evidencias-pipeline.zip`.
+- Pela interface: abra a run em https://github.com/enzoblousa/boletim-escolar/actions, role até "Artifacts" no final da página e baixe `evidencias-pipeline.zip`.
 - Pelo `gh` CLI:
   ```bash
   gh run list --branch main --limit 5

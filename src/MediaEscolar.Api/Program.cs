@@ -1,21 +1,42 @@
+using System.Reflection;
+using MediaEscolar.Api.Data;
 using MediaEscolar.Api.Models;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Connection string vem da configuração (variável de ambiente ConnectionStrings__Default), nunca fixa no código
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("Default")));
+builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>();
+
 var app = builder.Build();
 
-var alunos = new List<Aluno>();
-var proximoId = 1;
-
-app.MapPost("/alunos", (CadastrarAlunoRequest request) =>
+// Cria o schema no banco na inicialização, caso ainda não exista
+using (var scope = app.Services.CreateScope())
 {
-    var aluno = new Aluno { Id = proximoId++, Nome = request.Nome };
-    alunos.Add(aluno);
+    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureCreated();
+}
+
+// Versão semântica da aplicação, injetada no build da imagem (ARG VERSION do Dockerfile)
+var versao = typeof(Program).Assembly
+    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "desconhecida";
+
+app.MapHealthChecks("/health");
+
+app.MapGet("/version", () => Results.Ok(new { versao }));
+
+app.MapPost("/alunos", async (CadastrarAlunoRequest request, AppDbContext db) =>
+{
+    var aluno = new Aluno { Nome = request.Nome };
+    db.Alunos.Add(aluno);
+    await db.SaveChangesAsync();
     return Results.Created($"/alunos/{aluno.Id}", aluno);
 });
 
-app.MapPost("/alunos/{id:int}/notas", (int id, RegistrarNotasRequest request) =>
+app.MapPost("/alunos/{id:int}/notas", async (int id, RegistrarNotasRequest request, AppDbContext db) =>
 {
-    var aluno = alunos.FirstOrDefault(a => a.Id == id);
+    var aluno = await db.Alunos.FindAsync(id);
     if (aluno is null)
     {
         return Results.NotFound();
@@ -33,12 +54,13 @@ app.MapPost("/alunos/{id:int}/notas", (int id, RegistrarNotasRequest request) =>
 
     aluno.Nota1 = request.Nota1;
     aluno.Nota2 = request.Nota2;
+    await db.SaveChangesAsync();
     return Results.Ok(aluno);
 });
 
-app.MapGet("/alunos/{id:int}", (int id) =>
+app.MapGet("/alunos/{id:int}", async (int id, AppDbContext db) =>
 {
-    var aluno = alunos.FirstOrDefault(a => a.Id == id);
+    var aluno = await db.Alunos.FindAsync(id);
     if (aluno is null)
     {
         return Results.NotFound();
@@ -54,7 +76,7 @@ app.MapGet("/alunos/{id:int}", (int id) =>
     return Results.Ok(new AlunoResponse(aluno.Id, aluno.Nome, aluno.Nota1, aluno.Nota2, media, situacao));
 });
 
-app.MapGet("/alunos", () => alunos);
+app.MapGet("/alunos", async (AppDbContext db) => await db.Alunos.OrderBy(a => a.Id).ToListAsync());
 
 app.Run();
 
