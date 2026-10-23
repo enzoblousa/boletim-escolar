@@ -2,7 +2,7 @@
 
 Checklist do que faltava neste repositório para atender a **Avaliação A2 — Projeto Fase 2: Infraestrutura como Código (IaC) e Entrega Contínua (CD)**, conforme `specsEntregaA2`.
 
-> **Status em 23/10/2026:** todos os itens técnicos foram implementados e validados no GitHub Actions. Restam só os 2 itens manuais marcados com 👤 no final.
+> **Status em 23/10/2026:** todos os itens técnicos foram implementados e validados no GitHub Actions. Resta só 1 item manual opcional, marcado com 👤.
 
 ## Resumo
 
@@ -12,7 +12,7 @@ Checklist do que faltava neste repositório para atender a **Avaliação A2 — 
 | 2 | Orquestração local (Docker Compose) com dependências | ✅ Feito | `docker-compose.yml`, `Documentation/DOCKER-COMPOSE.md` |
 | 3 | Pipeline de CD (push para registry + deploy automático) | ✅ Feito | `.github/workflows/ci-cd.yml`, `deploy.yml`, `Documentation/CI-CD.md` |
 | 4 | Gestão segura de configurações e segredos | ✅ Feito | GitHub Environments, `.env.example`, `Documentation/SEGREDOS.md` |
-| 5 | Versionamento semântico + rollback documentado | ✅ Feito | tags `v1.0.0`/`v1.0.1`/`v1.1.0`, `Documentation/VERSIONAMENTO-E-ROLLBACK.md` |
+| 5 | Versionamento semântico + rollback documentado | ✅ Feito | tags `v1.0.0` → `v1.1.1`, `Documentation/VERSIONAMENTO-E-ROLLBACK.md` |
 
 ---
 
@@ -74,7 +74,8 @@ Checklist do que faltava neste repositório para atender a **Avaliação A2 — 
 - [x] **SemVer** com tags `vX.Y.Z`; o push da tag dispara build/push/deploy.
 - [x] Imagem com tags `X.Y.Z`, `X.Y`, `latest`, `sha-<commit>`.
 - [x] `<Version>` no `.csproj` (sobrescrita pela tag) e `GET /version`, conferido pelo smoke test.
-- [x] **GitHub Releases** criadas automaticamente (`v1.0.1`).
+- [x] **GitHub Releases** criadas automaticamente (`v1.0.1`, `v1.1.1`).
+- [x] `latest` promovido só depois de produção (corrigido após a `v1.1.0` defeituosa ter virado `latest`).
 - [x] Rollback:
   - [x] Automático: smoke test falhou, volta para a versão que estava no ar.
   - [x] Manual: `workflow_dispatch` do workflow `Deploy` com `ambiente` + `versao`.
@@ -84,6 +85,7 @@ Checklist do que faltava neste repositório para atender a **Avaliação A2 — 
   3. Deploy falhou no smoke test de homologação.
   4. Rollback automático para `1.0.1`, com dados preservados e produção intacta.
   5. Rollback manual de produção `1.0.1 → 1.0.0`.
+  6. `v1.1.1` com a correção, promovida até produção.
 
 ---
 
@@ -102,5 +104,5 @@ Checklist do que faltava neste repositório para atender a **Avaliação A2 — 
 
 ## Pendências manuais (👤)
 
-- [ ] 👤 **Tornar o pacote do GHCR público** (opcional, para o professor ver as imagens sem login): *github.com/enzoblousa → Packages → boletim-escolar → Package settings → Change visibility → Public*. O token do `gh` usado nesta sessão não tem o escopo `read/write:packages`, então isso não pôde ser feito pela CLI.
+- [x] Pacote do GHCR público: o `docker pull ghcr.io/enzoblousa/boletim-escolar:latest` funciona sem login (validado em 23/10).
 - [ ] 👤 Print da tela de Environments/Secrets (item 4), se necessário.
