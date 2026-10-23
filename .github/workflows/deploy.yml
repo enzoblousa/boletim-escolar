@@ -33,6 +33,7 @@ jobs:
     # Environment do GitHub: guarda os Secrets/Variables do ambiente e registra o histórico de deploys
     environment: ${{ inputs.ambiente }}
     concurrency: deploy-${{ inputs.ambiente }}
+    timeout-minutes: 15
     env:
       APP_IMAGE: ghcr.io/${{ github.repository }}
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
