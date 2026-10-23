@@ -72,10 +72,10 @@ Lista de toda tecnologia/ferramenta usada no repositório, com o motivo de cada 
 
 - **GitHub Actions** — orquestra a pipeline de build, lint, testes e publicação de evidências a cada push/PR para `main`.
   Onde: `.github/workflows/ci-cd.yml`; detalhado passo a passo em `CI.md`.
-  - `actions/checkout@v4` — clona o repositório na VM do runner.
-  - `actions/setup-dotnet@v4` — instala o SDK do .NET 8 na VM (`dotnet-version: '8.0.x'`).
-  - `actions/upload-artifact@v4` — publica a pasta `TestResults/` (relatórios de lint, `.trx`, cobertura, screenshot) como artifact `evidencias-pipeline`.
-  - `docker/setup-buildx-action@v3`, `docker/login-action@v3`, `docker/metadata-action@v5`, `docker/build-push-action@v6` — login no GHCR com `GITHUB_TOKEN`, geração das tags semver (`1.2.3`, `1.2`, `latest`, `sha-…`) e build/push com cache.
+  - `actions/checkout@v7` — clona o repositório na VM do runner.
+  - `actions/setup-dotnet@v6` — instala o SDK do .NET 8 na VM (`dotnet-version: '8.0.x'`).
+  - `actions/upload-artifact@v7` — publica a pasta `TestResults/` (relatórios de lint, `.trx`, cobertura, screenshot) como artifact `evidencias-pipeline`.
+  - `docker/setup-buildx-action@v4`, `docker/login-action@v4`, `docker/metadata-action@v6`, `docker/build-push-action@v7` — login no GHCR com `GITHUB_TOKEN`, geração das tags semver (`1.2.3`, `1.2`, `latest`, `sha-…`) e build/push com cache.
   - **Reusable workflow** (`.github/workflows/deploy.yml`) — deploy por ambiente, chamado pelo CI-CD e disparável manualmente (`workflow_dispatch`) para rollback manual.
 
 - **GitHub Environments, Secrets e Variables** — ambientes `homologacao` e `producao` (este com aprovação manual), cada um com seus segredos (`POSTGRES_PASSWORD`) e configurações (`POSTGRES_DB`, `POSTGRES_USER`, `ASPNETCORE_ENVIRONMENT`).

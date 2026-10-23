@@ -47,6 +47,7 @@ env:
   ASPNETCORE_ENVIRONMENT: ${{ vars.ASPNETCORE_ENVIRONMENT }}
 ```
 
+- Como o deploy é um *reusable workflow*, os jobs chamadores em `ci-cd.yml` usam `secrets: inherit`. Sem isso, os Environment secrets chegam vazios ao `deploy.yml`. Foi o que aconteceu na primeira execução da `v1.0.0`: o passo de validação barrou o deploy antes de subir qualquer coisa.
 - O GitHub mascara (`***`) qualquer valor de secret que apareça nos logs.
 - Secrets de Environment só ficam disponíveis para jobs que declaram aquele `environment`, e o Environment `producao` ainda exige aprovação manual antes de o job rodar.
 - O passo "Validar configuração do ambiente" falha cedo, com mensagem clara, se o secret não existir.
