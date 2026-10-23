@@ -61,6 +61,7 @@ Localmente, o mesmo script funciona contra o `docker compose` da máquina: `./sc
 | 3 | `v1.1.0` | **Release defeituosa proposital** ([PR #3](https://github.com/enzoblousa/boletim-escolar/pull/3)) | ❌ smoke test falhou em homologação → ⏪ **rollback automático para 1.0.1** → produção não foi tocada, sem Release | [run 39965267691](https://github.com/enzoblousa/boletim-escolar/actions/runs/39965267691) · [job](https://github.com/enzoblousa/boletim-escolar/actions/runs/39965267691/job/120455130457) |
 | 4 | — | Revert do defeito na `main` ([PR #4](https://github.com/enzoblousa/boletim-escolar/pull/4)) | ✅ CI | — |
 | 5 | `1.0.0` | **Rollback manual** da produção (`1.0.1 → 1.0.0`) via `workflow_dispatch`, com aprovação | ✅ produção na 1.0.0 | [run 39966010445](https://github.com/enzoblousa/boletim-escolar/actions/runs/39966010445) |
+| 6 | `v1.1.1` | Correção da 1.1.0 (revert) + `latest` passa a ser promovido só depois de produção ([PR #5](https://github.com/enzoblousa/boletim-escolar/pull/5)) | ✅ homologação → aprovação → ✅ produção → Release `v1.1.1`, `latest` = 1.1.1 | [run 39966956719](https://github.com/enzoblousa/boletim-escolar/actions/runs/39966956719) · [release](https://github.com/enzoblousa/boletim-escolar/releases/tag/v1.1.1) |
 
 ### O defeito da `v1.1.0`
 
@@ -109,6 +110,8 @@ Ambiente atualmente na versão 1.0.1
 ```
 
 ### Lições / próximos passos
+
+- A tag `latest` era movida no `publish` e chegou a apontar para a `1.1.0` defeituosa, mesmo com ela barrada em homologação. Agora ela é promovida só no job `release`, depois de produção.
 
 - Mudanças de schema devem usar **migrations do EF Core** (`dotnet ef migrations add` + `Database.Migrate()`) em vez de `EnsureCreated()`.
 - O smoke test em um ambiente com estado (homologação) pegou o que os testes automatizados não pegavam. Por isso homologação vem antes de produção.
