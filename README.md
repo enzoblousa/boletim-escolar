@@ -62,10 +62,10 @@ Workflows: `.github/workflows/ci-cd.yml` e `.github/workflows/deploy.yml` (detal
 6. Publicação das evidências (artifact `evidencias-pipeline`)
 
 **CD** (tags semver `vX.Y.Z`):
-1. **publish**: push da imagem para o GHCR (`ghcr.io/enzoblousa/boletim-escolar`) com as tags `X.Y.Z`, `X.Y`, `latest` e `sha-…`
+1. **publish**: push da imagem para o GHCR (`ghcr.io/enzoblousa/boletim-escolar`) com as tags `X.Y.Z`, `X.Y` e `sha-…`
 2. **deploy-homologacao**: deploy com docker compose no Environment `homologacao` + smoke test + rollback automático se falhar
 3. **deploy-producao**: o mesmo no Environment `producao`, que exige **aprovação manual**
-4. **release**: cria a GitHub Release (só para versões que passaram nos dois ambientes)
+4. **release**: promove a imagem para `latest` e cria a GitHub Release (só para versões que passaram nos dois ambientes)
 
 **Rollback manual**: workflow `Deploy` (`workflow_dispatch`), informando ambiente e versão.
 

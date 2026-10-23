@@ -76,7 +76,8 @@ jobs:
           name: evidencias-pipeline
           path: ./TestResults
 
-  # Publica a imagem no GitHub Container Registry com tags semver: 1.2.3, 1.2, latest e sha-<commit>
+  # Publica a imagem no GitHub Container Registry com tags semver: 1.2.3, 1.2 e sha-<commit>
+  # (a tag "latest" NÃO é movida aqui: só no job release, depois que a versão passou em produção)
   publish:
     needs: build-and-test
     if: startsWith(github.ref, 'refs/tags/v')
@@ -106,6 +107,8 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
@@ -155,7 +158,19 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
     steps:
+      - name: Login no GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # "latest" = última versão estável: aponta para a imagem que acabou de passar em produção (sem rebuild, só retag do manifest)
+      - name: Promover imagem para latest
+        run: docker buildx imagetools create -t "${IMAGE_NAME}:latest" "${IMAGE_NAME}:${{ needs.publish.outputs.version }}"
+
       - name: Criar GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
